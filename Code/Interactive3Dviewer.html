@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Event Track Visualizer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", sans-serif;
+            margin: 0;
+            background-color: #111;
+            color: #eee;
+            overflow: hidden; /* Hide scrollbars */
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #ui-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        h2, h3 {
+            margin: 0 0 10px 0;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #444;
+        }
+        button {
+            font-size: 16px;
+            padding: 8px 15px;
+            margin: 0 5px;
+            border-radius: 8px;
+            border: 1px solid #666;
+            background-color: #333;
+            color: #eee;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #555;
+        }
+        button:disabled {
+            background-color: #222;
+            color: #555;
+            cursor: not-allowed;
+        }
+        #event-display {
+            font-size: 24px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        #info-box {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            font-size: 14px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-container">
+        <h2>Event Visualizer</h2>
+        <div>
+            <span id="event-display">Event: 0</span>
+            <button id="prev-btn">&lt; Prev</button>
+            <button id="next-btn">Next &gt;</button>
+        </div>
+        <h3 id="track-count">Tracks: 0</h3>
+    </div>
+
+    <div id="info-box">
+        Use Mouse: Rotate (Left Click + Drag) | Zoom (Scroll) | Pan (Right Click + Drag)
+    </div>
+
+    <!-- Load three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Load OrbitControls for mouse interaction -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let eventData = {};
+        let currentEventId = 0;
+        const totalEvents = 10; // 0-9
+        
+        // A group to hold all tracks for easy removal
+        let tracksGroup = new THREE.Group();
+        // A pool of colors for the tracks
+        const colors = [
+            0x4287f5, 0xf54242, 0x42f56a, 0xf5a442, 0xa442f5,
+            0xf542d4, 0x42f5f2, 0xf5e942, 0x9ef542, 0x42f599
+        ];
+
+        // --- DOM Elements ---
+        const eventDisplay = document.getElementById('event-display');
+        const trackCountDisplay = document.getElementById('track-count');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+
+        // 1. Initialize the 3D scene
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50000);
+            camera.position.set(2000, 2000, 2000); // Start zoomed out
+            
+            // Renderer
+            const container = document.getElementById('canvas-container');
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setClearColor(0x111111); // Dark background
+            container.appendChild(renderer.domElement);
+            
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.1;
+            controls.rotateSpeed = 0.5;
+            controls.zoomSpeed = 0.8;
+            controls.panSpeed = 0.5;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 0.5);
+            scene.add(directionalLight);
+
+            // Axes Helper (X=Red, Y=Green, Z=Blue)
+            const axesHelper = new THREE.AxesHelper(5000);
+            scene.add(axesHelper);
+
+            // A grid helper on the Z=0 plane
+            const gridHelper = new THREE.GridHelper(10000, 20, 0x555555, 0x333333);
+            scene.add(gridHelper);
+            
+            // Add the tracks group to the scene
+            scene.add(tracksGroup);
+
+            // Handle window resizing
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // Start the animation loop
+            animate();
+        }
+
+        // 2. Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); // Update controls
+            renderer.render(scene, camera);
+        }
+
+        // 3. Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // 4. Load the JSON data
+        async function loadData() {
+            try {
+                const response = await fetch('data/tracks_data.json');
+                if (!response.ok) {
+                    throw new Error(`Failed to load tracks_data.json. Make sure you ran the Python script!`);
+                }
+                eventData = await response.json();
+                console.log("Event data loaded:", eventData);
+                // Draw the first event
+                drawEvent(currentEventId);
+                updateUI();
+            } catch (error) {
+                console.error(error);
+                alert(error.message);
+                eventDisplay.innerText = "Error loading data.";
+            }
+        }
+
+        // 5. Draw a specific event
+        function drawEvent(eventId) {
+            // Clear previous event's tracks
+            while(tracksGroup.children.length > 0){ 
+                tracksGroup.remove(tracksGroup.children[0]); 
+            }
+            
+            const tracks = eventData[eventId];
+            if (!tracks) {
+                console.warn(`No data for event ${eventId}`);
+                trackCountDisplay.innerText = "Tracks: 0";
+                return;
+            }
+
+            console.log(`Drawing event ${eventId} with ${tracks.length} tracks.`);
+            trackCountDisplay.innerText = `Tracks: ${tracks.length}`;
+
+            // Create geometry for each track
+            tracks.forEach((track, index) => {
+                const points = [];
+                track.points.forEach(p => {
+                    points.push(new THREE.Vector3(p.x, p.y, p.z));
+                });
+
+                // Create the line geometry
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                
+                // Get a color from the pool
+                const color = colors[index % colors.length];
+                const material = new THREE.LineBasicMaterial({ 
+                    color: color,
+                    linewidth: 2 // Note: linewidth > 1 may not work on all systems
+                });
+
+                // Create the line and add it to the group
+                const line = new THREE.Line(geometry, material);
+                tracksGroup.add(line);
+            });
+        }
+        
+        // 6. Update UI elements
+        function updateUI() {
+            eventDisplay.innerText = `Event: ${currentEventId}`;
+            prevBtn.disabled = (currentEventId === 0);
+            nextBtn.disabled = (currentEventId === totalEvents - 1);
+        }
+        
+        // 7. Add event listeners to buttons
+        prevBtn.addEventListener('click', () => {
+            if (currentEventId > 0) {
+                currentEventId--;
+                drawEvent(currentEventId);
+                updateUI();
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (currentEventId < totalEvents - 1) {
+                currentEventId++;
+                drawEvent(currentEventId);
+                updateUI();
+            }
+        });
+
+        // --- Start Everything ---
+        init();
+        loadData();
+
+    </script>
+</body>
+</html>
