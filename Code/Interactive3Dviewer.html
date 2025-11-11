@@ -29,11 +29,16 @@
             border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.5);
             border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 280px;
         }
         h2, h3 {
             margin: 0 0 10px 0;
             padding-bottom: 5px;
             border-bottom: 1px solid #444;
+        }
+        h3 {
+            font-size: 1.1em;
+            margin-top: 15px;
         }
         button {
             font-size: 16px;
@@ -67,6 +72,26 @@
             font-size: 14px;
             color: #aaa;
         }
+        .ui-section {
+            margin-top: 15px;
+        }
+        .ui-section h4 {
+            margin: 0 0 8px 0;
+        }
+        label {
+            display: block;
+            margin: 5px 0;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        input[type="checkbox"] {
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -74,22 +99,38 @@
     <div id="canvas-container"></div>
 
     <div id="ui-container">
-        <h2>Event Visualizer</h2>
+        <h2>Event Visualiser</h2>
         <div>
             <span id="event-display">Event: 0</span>
             <button id="prev-btn">&lt; Prev</button>
             <button id="next-btn">Next &gt;</button>
         </div>
+        
         <h3 id="track-count">Tracks: 0</h3>
+        <h3 id="calo-count">Calo Hits: 0</h3>
+
+        <div class="ui-section">
+            <h4>Display Options</h4>
+            <label>
+                <input type="checkbox" id="show-tracks-check" checked> Show Tracks
+            </label>
+            <label>
+                <input type="checkbox" id="show-calo-check" checked> Show Calorimeter
+            </label>
+        </div>
+
+        <div class="ui-section">
+            <h4>Filters</h4>
+            <label for="pt-slider">pT Cut: <span id="pt-value">0.5</span> GeV</label>
+            <input type="range" id="pt-slider" min="0" max="10" step="0.1" value="0.5">
+        </div>
     </div>
 
     <div id="info-box">
         Use Mouse: Rotate (Left Click + Drag) | Zoom (Scroll) | Pan (Right Click + Drag) || (X=Red, Y=Green, Z=Blue)
     </div>
 
-    <!-- Load three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- Load OrbitControls for mouse interaction -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
     <script>
@@ -98,74 +139,74 @@
         let currentEventId = 0;
         const totalEvents = 10; // 0-9
         
-        // A group to hold all tracks for easy removal
+        // Groups to hold objects for easy removal
         let tracksGroup = new THREE.Group();
+        let caloGroup = new THREE.Group(); // NEW: Group for calo hits
+
         // A pool of colors for the tracks
         const colors = [
             0x4287f5, 0xf54242, 0x42f56a, 0xf5a442, 0xa442f5,
-            0xf542d4, 0x42f5f2, 0xf5e942, 0x9ef542, 0x42f599
+            0xf542d4, 0x42f5f2, 0xf5e942, 0x9ef542, 0x42f599,
+            0x1a73e8, 0xd93025, 0x1e8e3e, 0xf29900, 0x8f00ff
         ];
+
+        // We re-use this geometry for all calo hits for efficiency
+        const caloGeometry = new THREE.BoxGeometry(20, 20, 20); 
+        // We will create new materials for each hit to set its color
+        const CALO_ENERGY_SCALE = 750; // Adjust this to scale the calo cubes
 
         // --- DOM Elements ---
         const eventDisplay = document.getElementById('event-display');
         const trackCountDisplay = document.getElementById('track-count');
+        const caloCountDisplay = document.getElementById('calo-count'); // NEW
         const prevBtn = document.getElementById('prev-btn');
         const nextBtn = document.getElementById('next-btn');
+        
+        // NEW: UI Control Elements
+        const showTracksCheck = document.getElementById('show-tracks-check');
+        const showCaloCheck = document.getElementById('show-calo-check');
+        const ptSlider = document.getElementById('pt-slider');
+        const ptValueDisplay = document.getElementById('pt-value');
 
         // 1. Initialize the 3D scene
         function init() {
-            // Scene
             scene = new THREE.Scene();
-            
-            // Camera
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50000);
-            camera.position.set(2000, 2000, 2000); // Start zoomed out
+            camera.position.set(2000, 2000, 2000);
             
-            // Renderer
             const container = document.getElementById('canvas-container');
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setClearColor(0x111111); // Dark background
+            renderer.setClearColor(0x111111);
             container.appendChild(renderer.domElement);
             
-            // Controls
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.dampingFactor = 0.1;
-            controls.rotateSpeed = 0.5;
-            controls.zoomSpeed = 0.8;
-            controls.panSpeed = 0.5;
 
-            // Lights
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             scene.add(ambientLight);
             const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
             directionalLight.position.set(1, 1, 0.5);
             scene.add(directionalLight);
 
-            // Axes Helper (X=Red, Y=Green, Z=Blue)
             const axesHelper = new THREE.AxesHelper(5000);
             scene.add(axesHelper);
-
-            // A grid helper on the Z=0 plane
             const gridHelper = new THREE.GridHelper(10000, 20, 0x555555, 0x333333);
             scene.add(gridHelper);
             
-            // Add the tracks group to the scene
+            // Add the groups to the scene
             scene.add(tracksGroup);
+            scene.add(caloGroup); // NEW
 
-            // Handle window resizing
             window.addEventListener('resize', onWindowResize, false);
-            
-            // Start the animation loop
             animate();
         }
 
         // 2. Animation loop
         function animate() {
             requestAnimationFrame(animate);
-            controls.update(); // Update controls
+            controls.update();
             renderer.render(scene, camera);
         }
 
@@ -176,17 +217,17 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // 4. Load the JSON data
+        // 4. Load the NEW JSON data
         async function loadData() {
             try {
-                const response = await fetch('data/tracks_data.json');
+                // *** IMPORTANT: Load the new file ***
+                const response = await fetch('data/event_data_full.json'); 
                 if (!response.ok) {
-                    throw new Error(`Failed to load tracks_data.json. Make sure you ran the Python script!`);
+                    throw new Error(`Failed to load event_data_full.json. Make sure you ran the new Python script!`);
                 }
                 eventData = await response.json();
                 console.log("Event data loaded:", eventData);
-                // Draw the first event
-                drawEvent(currentEventId);
+                drawEvent(currentEventId); // Draw the first event
                 updateUI();
             } catch (error) {
                 console.error(error);
@@ -195,54 +236,107 @@
             }
         }
 
-        // 5. Draw a specific event
+        // 5. Draw a specific event 
         function drawEvent(eventId) {
-            // Clear previous event's tracks
-            while(tracksGroup.children.length > 0){ 
-                tracksGroup.remove(tracksGroup.children[0]); 
-            }
+            // A. Get current UI settings
+            const ptCut = parseFloat(ptSlider.value);
+            const showTracks = showTracksCheck.checked;
+            const showCalo = showCaloCheck.checked;
+
+            // B. Clear previous event's objects
+            clearGroup(tracksGroup);
+            clearGroup(caloGroup);
             
-            const tracks = eventData[eventId];
-            if (!tracks) {
+            const event = eventData[eventId];
+            if (!event) {
                 console.warn(`No data for event ${eventId}`);
                 trackCountDisplay.innerText = "Tracks: 0";
+                caloCountDisplay.innerText = "Calo Hits: 0";
                 return;
             }
 
-            console.log(`Drawing event ${eventId} with ${tracks.length} tracks.`);
-            trackCountDisplay.innerText = `Tracks: ${tracks.length}`;
+            // C. Filter data based on pT cut
+            const filteredTracks = event.tracks.filter(t => t.pT >= ptCut);
+            const filteredCalo = event.calo_hits.filter(c => c.pT >= ptCut);
+            
+            // D. Update counts in UI
+            trackCountDisplay.innerText = `Tracks: ${filteredTracks.length} / ${event.tracks.length}`;
+            caloCountDisplay.innerText = `Calo Hits: ${filteredCalo.length} / ${event.calo_hits.length}`;
 
-            // Create geometry for each track
-            tracks.forEach((track, index) => {
-                const points = [];
-                track.points.forEach(p => {
-                    points.push(new THREE.Vector3(p.x, p.y, p.z));
+            // E. Create a color map for this event to match tracks and calo
+            const particleColorMap = new Map();
+            let colorIndex = 0;
+            const getColor = (particleId) => {
+                if (!particleColorMap.has(particleId)) {
+                    particleColorMap.set(particleId, colors[colorIndex % colors.length]);
+                    colorIndex++;
+                }
+                return particleColorMap.get(particleId);
+            };
+
+            // F. Draw Tracks (if toggled)
+            if (showTracks) {
+                filteredTracks.forEach((track) => {
+                    const points = [];
+                    track.points.forEach(p => {
+                        points.push(new THREE.Vector3(p.x, p.y, p.z));
+                    });
+
+                    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                    const color = getColor(track.particle_id);
+                    const material = new THREE.LineBasicMaterial({ color: color });
+
+                    const line = new THREE.Line(geometry, material);
+                    tracksGroup.add(line);
                 });
-
-                // Create the line geometry
-                const geometry = new THREE.BufferGeometry().setFromPoints(points);
-                
-                // Get a color from the pool
-                const color = colors[index % colors.length];
-                const material = new THREE.LineBasicMaterial({ 
-                    color: color,
-                    linewidth: 2 // Note: linewidth > 1 may not work on all systems
+            }
+            
+            // G. Draw Calo Hits (if toggled)
+            if (showCalo) {
+                filteredCalo.forEach((hit) => {
+                    const color = getColor(hit.particle_id);
+                    const material = new THREE.MeshBasicMaterial({ 
+                        color: color,
+                        opacity: 0.7,
+                        transparent: true
+                    });
+                    
+                    const mesh = new THREE.Mesh(caloGeometry, material);
+                    
+                    // Position the cube
+                    mesh.position.set(hit.x, hit.y, hit.z);
+                    
+                    // Scale the cube based on energy (log scale is often better)
+                    const scale = Math.max(0.1, Math.log10(1 + hit.energy * CALO_ENERGY_SCALE));
+                    mesh.scale.set(scale, scale, scale);
+                    
+                    caloGroup.add(mesh);
                 });
-
-                // Create the line and add it to the group
-                const line = new THREE.Line(geometry, material);
-                tracksGroup.add(line);
-            });
+            }
         }
         
-        // 6. Update UI elements
+        // Helper to safely clear a group
+        function clearGroup(group) {
+            while(group.children.length > 0){ 
+                const obj = group.children[0];
+                group.remove(obj);
+                
+                // Important: Dispose of geometry and material to free memory
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+            }
+        }
+        
+        // 6. Update UI elements (like buttons)
         function updateUI() {
             eventDisplay.innerText = `Event: ${currentEventId}`;
             prevBtn.disabled = (currentEventId === 0);
             nextBtn.disabled = (currentEventId === totalEvents - 1);
         }
         
-        // 7. Add event listeners to buttons
+        // 7. Add event listeners
+        
+        // Event navigation
         prevBtn.addEventListener('click', () => {
             if (currentEventId > 0) {
                 currentEventId--;
@@ -258,6 +352,17 @@
                 updateUI();
             }
         });
+        
+        // When toggles change, just redraw
+        showTracksCheck.addEventListener('change', () => drawEvent(currentEventId));
+        showCaloCheck.addEventListener('change', () => drawEvent(currentEventId));
+
+        // When slider moves, update text and redraw
+        ptSlider.addEventListener('input', () => {
+            ptValueDisplay.innerText = parseFloat(ptSlider.value).toFixed(1);
+            drawEvent(currentEventId);
+        });
+
 
         // --- Start Everything ---
         init();
