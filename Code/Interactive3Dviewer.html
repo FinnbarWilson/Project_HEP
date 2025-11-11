@@ -92,6 +92,27 @@
             width: 100%;
             margin-top: 5px;
         }
+        #toggle-menu-btn {
+            float: right;
+            font-size: 20px;
+            font-weight: bold;
+            font-family: monospace; /* Makes [+] and [–] look good */
+            background: #444;
+            border: none;
+            color: #eee;
+            cursor: pointer;
+            padding: 0 8px;
+            margin-top: -4px;
+            border-radius: 5px;
+        }
+        #toggle-menu-btn:hover {
+            background: #666;
+        }
+
+        /* This is the magic: When the container is minimized, hide the content */
+        #ui-container.minimized #ui-content {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -99,31 +120,36 @@
     <div id="canvas-container"></div>
 
     <div id="ui-container">
-        <h2>Event Visualiser</h2>
-        <div>
-            <span id="event-display">Event: 0</span>
-            <button id="prev-btn">&lt; Prev</button>
-            <button id="next-btn">Next &gt;</button>
-        </div>
+        <h2>Event Visualizer <button id="toggle-menu-btn">[–]</button></h2>
+
+        <div id="ui-content"> 
         
-        <h3 id="track-count">Tracks: 0</h3>
-        <h3 id="calo-count">Calo Hits: 0</h3>
+            <div>
+                <span id="event-display">Event: 0</span>
+                <button id="prev-btn">&lt; Prev</button>
+                <button id="next-btn">Next &gt;</button>
+            </div>
+            
+            <h3 id="track-count">Tracks: 0</h3>
+            <h3 id="calo-count">Calo Hits: 0</h3>
+    
+            <div class="ui-section">
+                <h4>Display Options</h4>
+                <label>
+                    <input type="checkbox" id="show-tracks-check" checked> Show Tracks
+                </label>
+                <label>
+                    <input type="checkbox" id="show-calo-check" checked> Show Calorimeter
+                </label>
+            </div>
+    
+            <div class="ui-section">
+                <h4>Filters</h4>
+                <label for="pt-slider">pT Cut: <span id="pt-value">0.5</span> GeV</label>
+                <input type="range" id="pt-slider" min="0" max="10" step="0.1" value="0.5">
+            </div>
 
-        <div class="ui-section">
-            <h4>Display Options</h4>
-            <label>
-                <input type="checkbox" id="show-tracks-check" checked> Show Tracks
-            </label>
-            <label>
-                <input type="checkbox" id="show-calo-check" checked> Show Calorimeter
-            </label>
-        </div>
-
-        <div class="ui-section">
-            <h4>Filters</h4>
-            <label for="pt-slider">pT Cut: <span id="pt-value">0.5</span> GeV</label>
-            <input type="range" id="pt-slider" min="0" max="10" step="0.1" value="0.5">
-        </div>
+        </div> 
     </div>
 
     <div id="info-box">
@@ -167,6 +193,11 @@
         const showCaloCheck = document.getElementById('show-calo-check');
         const ptSlider = document.getElementById('pt-slider');
         const ptValueDisplay = document.getElementById('pt-value');
+        
+        // --- NEW: Menu Toggle Elements ---
+        const uiContainer = document.getElementById('ui-container');
+        const toggleMenuBtn = document.getElementById('toggle-menu-btn');
+        // ---------------------------------
 
         // 1. Initialize the 3D scene
         function init() {
@@ -362,7 +393,20 @@
             ptValueDisplay.innerText = parseFloat(ptSlider.value).toFixed(1);
             drawEvent(currentEventId);
         });
-
+        
+        // --- NEW: Add this listener for the toggle button ---
+        toggleMenuBtn.addEventListener('click', () => {
+            // Toggle the 'minimized' class on the whole container
+            uiContainer.classList.toggle('minimized');
+            
+            // Check if it IS minimized, then update the button text
+            const isMinimized = uiContainer.classList.contains('minimized');
+            if (isMinimized) {
+                toggleMenuBtn.innerText = '[+]';
+            } else {
+                toggleMenuBtn.innerText = '[–]';
+            }
+        });
 
         // --- Start Everything ---
         init();
