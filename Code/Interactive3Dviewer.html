@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Event Track Visualiser</title>
+    <title>3D Event Track Visualizer</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", sans-serif;
@@ -109,9 +109,20 @@
             background: #666;
         }
 
-        /* This is the magic: When the container is minimized, hide the content */
         #ui-container.minimized #ui-content {
             display: none;
+        }
+
+        /* Style for the PDG dropdown */
+        #pdg-id-select {
+            width: 100%;
+            padding: 6px;
+            margin-top: 5px;
+            background-color: #333;
+            color: #eee;
+            border: 1px solid #666;
+            border-radius: 5px;
+            font-size: 14px;
         }
     </style>
 </head>
@@ -120,7 +131,7 @@
     <div id="canvas-container"></div>
 
     <div id="ui-container">
-        <h2>Event Visualiser <button id="toggle-menu-btn">[–]</button></h2>
+        <h2>Event Visualizer <button id="toggle-menu-btn">[–]</button></h2>
 
         <div id="ui-content"> 
         
@@ -132,8 +143,7 @@
             
             <h3 id="track-count">Tracks: 0</h3>
             <h3 id="calo-count">Calo Hits: 0</h3>
-    
-            <div class="ui-section">
+            <h3 id="raw-hit-count">Raw Hits: 0</h3> <div class="ui-section">
                 <h4>Display Options</h4>
                 <label>
                     <input type="checkbox" id="show-tracks-check" checked> Show Tracks
@@ -141,12 +151,18 @@
                 <label>
                     <input type="checkbox" id="show-calo-check" checked> Show Calorimeter
                 </label>
+                <label>
+                    <input type="checkbox" id="show-raw-hits-check"> Show Raw Hits </label>
             </div>
     
             <div class="ui-section">
                 <h4>Filters</h4>
                 <label for="pt-slider">pT Cut: <span id="pt-value">0.5</span> GeV</label>
                 <input type="range" id="pt-slider" min="0" max="10" step="0.1" value="0.5">
+
+                <label for="pdg-id-select" style="margin-top: 15px;">PDG ID:</label> <select id="pdg-id-select">
+                    <option value="all">All Particles</option>
+                    </select>
             </div>
 
         </div> 
@@ -167,37 +183,51 @@
         
         // Groups to hold objects for easy removal
         let tracksGroup = new THREE.Group();
-        let caloGroup = new THREE.Group(); // NEW: Group for calo hits
+        let caloGroup = new THREE.Group(); 
+        let rawHitsGroup = new THREE.Group();
 
-        // A pool of colors for the tracks
+        // A pool of colors for the tracks and hits
         const colors = [
             0x4287f5, 0xf54242, 0x42f56a, 0xf5a442, 0xa442f5,
             0xf542d4, 0x42f5f2, 0xf5e942, 0x9ef542, 0x42f599,
-            0x1a73e8, 0xd93025, 0x1e8e3e, 0xf29900, 0x8f00ff
+            0x1a73e8, 0xd93025, 0x1e8e3e, 0xf29900, 0x8f00ff,
+            0x00bcd4, 0xffeb3b, 0x8bc34a, 0xff9800, 0x9c27b0
         ];
 
         // We re-use this geometry for all calo hits for efficiency
         const caloGeometry = new THREE.BoxGeometry(20, 20, 20); 
-        // We will create new materials for each hit to set its color
         const CALO_ENERGY_SCALE = 750; // Adjust this to scale the calo cubes
+
+        // NEW: Geometry and Material for Raw Tracker Hits
+        const rawHitGeometry = new THREE.BufferGeometry();
+        const rawHitMaterial = new THREE.PointsMaterial({
+            size: 15, // Size of the dots
+            sizeAttenuation: true, // Dots appear smaller when further away
+            transparent: true,
+            opacity: 0.5,
+            vertexColors: true // Use per-vertex colors
+        });
+
 
         // --- DOM Elements ---
         const eventDisplay = document.getElementById('event-display');
         const trackCountDisplay = document.getElementById('track-count');
-        const caloCountDisplay = document.getElementById('calo-count'); // NEW
+        const caloCountDisplay = document.getElementById('calo-count');
+        const rawHitCountDisplay = document.getElementById('raw-hit-count'); 
         const prevBtn = document.getElementById('prev-btn');
         const nextBtn = document.getElementById('next-btn');
         
-        // NEW: UI Control Elements
+        // UI Control Elements
         const showTracksCheck = document.getElementById('show-tracks-check');
         const showCaloCheck = document.getElementById('show-calo-check');
+        const showRawHitsCheck = document.getElementById('show-raw-hits-check'); 
         const ptSlider = document.getElementById('pt-slider');
         const ptValueDisplay = document.getElementById('pt-value');
+        const pdgIdSelect = document.getElementById('pdg-id-select'); 
         
-        // --- NEW: Menu Toggle Elements ---
+        // Menu Toggle Elements
         const uiContainer = document.getElementById('ui-container');
         const toggleMenuBtn = document.getElementById('toggle-menu-btn');
-        // ---------------------------------
 
         // 1. Initialize the 3D scene
         function init() {
@@ -228,8 +258,9 @@
             
             // Add the groups to the scene
             scene.add(tracksGroup);
-            scene.add(caloGroup); // NEW
-
+            scene.add(caloGroup);
+            scene.add(rawHitsGroup); 
+            
             window.addEventListener('resize', onWindowResize, false);
             animate();
         }
@@ -251,13 +282,14 @@
         // 4. Load the NEW JSON data
         async function loadData() {
             try {
-                // *** IMPORTANT: Load the new file ***
                 const response = await fetch('data/event_data_full.json'); 
                 if (!response.ok) {
                     throw new Error(`Failed to load event_data_full.json. Make sure you ran the new Python script!`);
                 }
                 eventData = await response.json();
                 console.log("Event data loaded:", eventData);
+                
+                populatePdgDropdown(); // Populate dropdown after data loads
                 drawEvent(currentEventId); // Draw the first event
                 updateUI();
             } catch (error) {
@@ -267,34 +299,73 @@
             }
         }
 
+        // NEW: Populate PDG ID dropdown with unique IDs from all events
+        function populatePdgDropdown() {
+            const allPdgIds = new Set();
+            for (const eventId in eventData) {
+                const event = eventData[eventId];
+                event.tracks.forEach(t => allPdgIds.add(t.pdg_id));
+                event.calo_hits.forEach(c => allPdgIds.add(c.pdg_id));
+                event.all_tracker_hits.forEach(h => allPdgIds.add(h.pdg_id));
+            }
+
+            // Sort PDG IDs for cleaner display
+            const sortedPdgIds = Array.from(allPdgIds).sort((a, b) => a - b);
+
+            pdgIdSelect.innerHTML = '<option value="all">All Particles</option>'; // Reset
+            sortedPdgIds.forEach(id => {
+                const option = document.createElement('option');
+                option.value = id;
+                option.innerText = id;
+                pdgIdSelect.appendChild(option);
+            });
+        }
+
         // 5. Draw a specific event 
         function drawEvent(eventId) {
             // A. Get current UI settings
             const ptCut = parseFloat(ptSlider.value);
+            const selectedPdgId = pdgIdSelect.value === 'all' ? null : parseInt(pdgIdSelect.value); // NEW: Get selected PDG ID
             const showTracks = showTracksCheck.checked;
             const showCalo = showCaloCheck.checked;
+            const showRawHits = showRawHitsCheck.checked; 
 
             // B. Clear previous event's objects
             clearGroup(tracksGroup);
             clearGroup(caloGroup);
+            clearGroup(rawHitsGroup);
             
             const event = eventData[eventId];
             if (!event) {
                 console.warn(`No data for event ${eventId}`);
                 trackCountDisplay.innerText = "Tracks: 0";
                 caloCountDisplay.innerText = "Calo Hits: 0";
+                rawHitCountDisplay.innerText = "Raw Hits: 0"; 
                 return;
             }
 
-            // C. Filter data based on pT cut
-            const filteredTracks = event.tracks.filter(t => t.pT >= ptCut);
-            const filteredCalo = event.calo_hits.filter(c => c.pT >= ptCut);
+            // C. Filter data based on pT cut AND PDG ID
+            const filterFunction = (item) => {
+                return item.pT >= ptCut && 
+                       (selectedPdgId === null || item.pdg_id === selectedPdgId);
+            };
+
+            const filteredTracks = event.tracks.filter(filterFunction);
+            const filteredCalo = event.calo_hits.filter(filterFunction);
+            const filteredRawHits = event.all_tracker_hits.filter(filterFunction);
             
             // D. Update counts in UI
             trackCountDisplay.innerText = `Tracks: ${filteredTracks.length} / ${event.tracks.length}`;
             caloCountDisplay.innerText = `Calo Hits: ${filteredCalo.length} / ${event.calo_hits.length}`;
+            rawHitCountDisplay.innerText = `Raw Hits: ${filteredRawHits.length} / ${event.all_tracker_hits.length}`; // NEW
 
             // E. Create a color map for this event to match tracks and calo
+            // Ensure unique particle_ids across all filtered types for consistent coloring
+            const uniqueParticleIds = new Set();
+            filteredTracks.forEach(t => uniqueParticleIds.add(t.particle_id));
+            filteredCalo.forEach(c => uniqueParticleIds.add(c.particle_id));
+            filteredRawHits.forEach(h => uniqueParticleIds.add(h.particle_id)); // NEW
+
             const particleColorMap = new Map();
             let colorIndex = 0;
             const getColor = (particleId) => {
@@ -304,6 +375,9 @@
                 }
                 return particleColorMap.get(particleId);
             };
+            // Pre-populate color map for all relevant particles
+            uniqueParticleIds.forEach(id => getColor(id));
+
 
             // F. Draw Tracks (if toggled)
             if (showTracks) {
@@ -334,15 +408,32 @@
                     
                     const mesh = new THREE.Mesh(caloGeometry, material);
                     
-                    // Position the cube
                     mesh.position.set(hit.x, hit.y, hit.z);
-                    
-                    // Scale the cube based on energy (log scale is often better)
                     const scale = Math.max(0.1, Math.log10(1 + hit.energy * CALO_ENERGY_SCALE));
                     mesh.scale.set(scale, scale, scale);
                     
                     caloGroup.add(mesh);
                 });
+            }
+
+            // H. Draw Raw Tracker Hits (if toggled) 
+            if (showRawHits && filteredRawHits.length > 0) {
+                const positions = [];
+                const colorsArray = [];
+                const pointColor = new THREE.Color();
+
+                filteredRawHits.forEach(hit => {
+                    positions.push(hit.x, hit.y, hit.z);
+                    const colorVal = getColor(hit.particle_id);
+                    pointColor.setHex(colorVal);
+                    colorsArray.push(pointColor.r, pointColor.g, pointColor.b);
+                });
+
+                rawHitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                rawHitGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsArray, 3));
+                
+                const points = new THREE.Points(rawHitGeometry, rawHitMaterial);
+                rawHitsGroup.add(points);
             }
         }
         
@@ -354,7 +445,11 @@
                 
                 // Important: Dispose of geometry and material to free memory
                 if (obj.geometry) obj.geometry.dispose();
-                if (obj.material) obj.material.dispose();
+                // For Points, the material is usually shared, so don't dispose unless it's unique
+                // If it's a MeshBasicMaterial (like for calo), dispose of it
+                if (obj.isMesh && obj.material) obj.material.dispose();
+                // For LineBasicMaterial, dispose too
+                if (obj.isLine && obj.material) obj.material.dispose();
             }
         }
         
@@ -387,19 +482,20 @@
         // When toggles change, just redraw
         showTracksCheck.addEventListener('change', () => drawEvent(currentEventId));
         showCaloCheck.addEventListener('change', () => drawEvent(currentEventId));
+        showRawHitsCheck.addEventListener('change', () => drawEvent(currentEventId)); 
 
         // When slider moves, update text and redraw
         ptSlider.addEventListener('input', () => {
             ptValueDisplay.innerText = parseFloat(ptSlider.value).toFixed(1);
             drawEvent(currentEventId);
         });
+
+        // When PDG ID dropdown changes, redraw
+        pdgIdSelect.addEventListener('change', () => drawEvent(currentEventId));
         
-        // --- NEW: Add this listener for the toggle button ---
+        // Menu Toggle
         toggleMenuBtn.addEventListener('click', () => {
-            // Toggle the 'minimized' class on the whole container
             uiContainer.classList.toggle('minimized');
-            
-            // Check if it IS minimized, then update the button text
             const isMinimized = uiContainer.classList.contains('minimized');
             if (isMinimized) {
                 toggleMenuBtn.innerText = '[+]';
