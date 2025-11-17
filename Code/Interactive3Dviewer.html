@@ -30,6 +30,8 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.5);
             border: 1px solid rgba(255, 255, 255, 0.2);
             max-width: 280px;
+            max-height: 90vh; /* Prevent it from going off screen */
+            overflow-y: auto; /* Scroll if menu gets too tall */
         }
         h2, h3 {
             margin: 0 0 10px 0;
@@ -74,14 +76,22 @@
         }
         .ui-section {
             margin-top: 15px;
+            border-top: 1px solid #444;
+            padding-top: 10px;
         }
         .ui-section h4 {
             margin: 0 0 8px 0;
+            display: flex;
+            justify-content: space-between;
+            cursor: pointer; /* Make headers clickable */
+        }
+        .ui-section h4:hover {
+            color: #fff;
         }
         label {
             display: block;
             margin: 5px 0;
-            font-size: 16px;
+            font-size: 14px;
             cursor: pointer;
         }
         input[type="checkbox"] {
@@ -90,14 +100,15 @@
         }
         input[type="range"] {
             width: 100%;
-            margin-top: 5px;
+            margin-top: 2px;
+            margin-bottom: 8px;
         }
         #toggle-menu-btn {
             float: right;
             font-size: 20px;
             font-weight: bold;
-            font-family: monospace; /* Makes [+] and [–] look good */
-            background: #444;
+            font-family: monospace; 
+            background: transparent;
             border: none;
             color: #eee;
             cursor: pointer;
@@ -106,14 +117,13 @@
             border-radius: 5px;
         }
         #toggle-menu-btn:hover {
-            background: #666;
+            background: transparent;
         }
 
         #ui-container.minimized #ui-content {
             display: none;
         }
 
-        /* Style for the PDG dropdown */
         #pdg-id-select {
             width: 100%;
             padding: 6px;
@@ -123,6 +133,18 @@
             border: 1px solid #666;
             border-radius: 5px;
             font-size: 14px;
+        }
+
+        .config-content {
+            display: none; 
+            padding-left: 5px;
+        }
+        .config-content.open {
+            display: block;
+        }
+        .toggle-icon {
+            font-family: monospace;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -143,16 +165,13 @@
             
             <h3 id="track-count">Tracks: 0</h3>
             <h3 id="calo-count">Calo Hits: 0</h3>
-            <h3 id="raw-hit-count">Raw Hits: 0</h3> <div class="ui-section">
+            <h3 id="raw-hit-count">Raw Hits: 0</h3> 
+
+            <div class="ui-section">
                 <h4>Display Options</h4>
-                <label>
-                    <input type="checkbox" id="show-tracks-check" checked> Show Tracks
-                </label>
-                <label>
-                    <input type="checkbox" id="show-calo-check" checked> Show Calorimeter
-                </label>
-                <label>
-                    <input type="checkbox" id="show-raw-hits-check"> Show Raw Hits </label>
+                <label><input type="checkbox" id="show-tracks-check" checked> Show Tracks</label>
+                <label><input type="checkbox" id="show-calo-check" checked> Show Calorimeter</label>
+                <label><input type="checkbox" id="show-raw-hits-check"> Show Raw Hits</label>
             </div>
     
             <div class="ui-section">
@@ -160,9 +179,25 @@
                 <label for="pt-slider">pT Cut: <span id="pt-value">0.5</span> GeV</label>
                 <input type="range" id="pt-slider" min="0" max="10" step="0.1" value="0.5">
 
-                <label for="pdg-id-select" style="margin-top: 15px;">PDG ID:</label> <select id="pdg-id-select">
+                <label for="pdg-id-select" style="margin-top: 5px;">PDG ID:</label> 
+                <select id="pdg-id-select">
                     <option value="all">All Particles</option>
-                    </select>
+                </select>
+            </div>
+
+            <div class="ui-section">
+                <h4 id="config-header">Plot Configuration <span id="config-icon" class="toggle-icon">[+]</span></h4>
+                
+                <div id="config-content" class="config-content">
+                    <label>Track Thickness: <span id="val-thick">3</span></label>
+                    <input type="range" id="cfg-thickness" min="1" max="10" step="0.5" value="3">
+                    
+                    <label>Calo Scale: <span id="val-calo">5000</span></label>
+                    <input type="range" id="cfg-calo" min="100" max="20000" step="100" value="5000">
+                    
+                    <label>Hit Radius: <span id="val-radius">8</span></label>
+                    <input type="range" id="cfg-radius" min="1" max="20" step="0.5" value="8">
+                </div>
             </div>
 
         </div> 
@@ -179,14 +214,12 @@
         let scene, camera, renderer, controls;
         let eventData = {};
         let currentEventId = 0;
-        const totalEvents = 10; // 0-9
+        const totalEvents = 10; 
         
-        // Groups to hold objects for easy removal
         let tracksGroup = new THREE.Group();
         let caloGroup = new THREE.Group(); 
         let rawHitsGroup = new THREE.Group();
 
-        // A pool of colors for the tracks and hits
         const colors = [
             0x4287f5, 0xf54242, 0x42f56a, 0xf5a442, 0xa442f5,
             0xf542d4, 0x42f5f2, 0xf5e942, 0x9ef542, 0x42f599,
@@ -194,20 +227,16 @@
             0x00bcd4, 0xffeb3b, 0x8bc34a, 0xff9800, 0x9c27b0
         ];
 
-        // We re-use this geometry for all calo hits for efficiency
-        const caloGeometry = new THREE.BoxGeometry(20, 20, 20); 
-        const CALO_ENERGY_SCALE = 750; // Adjust this to scale the calo cubes
+        // --- DYNAMIC CONFIGURATION VARIABLES ---
 
-        // NEW: Geometry and Material for Raw Tracker Hits
-        const rawHitGeometry = new THREE.BufferGeometry();
-        const rawHitMaterial = new THREE.PointsMaterial({
-            size: 15, // Size of the dots
-            sizeAttenuation: true, // Dots appear smaller when further away
-            transparent: true,
-            opacity: 0.5,
-            vertexColors: true // Use per-vertex colors
-        });
+        let TRACK_THICKNESS = 3;        // Default thickness
+        let CALO_ENERGY_SCALE = 5000;   // Default calo scale
+        let RAW_HIT_RADIUS = 8;         // Default hit radius
 
+        // Geometries
+        const caloGeometry = new THREE.BoxGeometry(40, 40, 40); 
+        // Create hit geometry with radius 1, we will .scale it later based on config
+        const rawHitGeometry = new THREE.SphereGeometry(1, 8, 6); 
 
         // --- DOM Elements ---
         const eventDisplay = document.getElementById('event-display');
@@ -217,19 +246,30 @@
         const prevBtn = document.getElementById('prev-btn');
         const nextBtn = document.getElementById('next-btn');
         
-        // UI Control Elements
+        // Main Controls
         const showTracksCheck = document.getElementById('show-tracks-check');
         const showCaloCheck = document.getElementById('show-calo-check');
         const showRawHitsCheck = document.getElementById('show-raw-hits-check'); 
         const ptSlider = document.getElementById('pt-slider');
         const ptValueDisplay = document.getElementById('pt-value');
         const pdgIdSelect = document.getElementById('pdg-id-select'); 
-        
-        // Menu Toggle Elements
         const uiContainer = document.getElementById('ui-container');
         const toggleMenuBtn = document.getElementById('toggle-menu-btn');
 
-        // 1. Initialize the 3D scene
+        // Config Menu Elements
+        const configHeader = document.getElementById('config-header');
+        const configContent = document.getElementById('config-content');
+        const configIcon = document.getElementById('config-icon');
+        
+        // Config Inputs
+        const cfgThickness = document.getElementById('cfg-thickness');
+        const cfgCalo = document.getElementById('cfg-calo');
+        const cfgRadius = document.getElementById('cfg-radius');
+        const valThick = document.getElementById('val-thick');
+        const valCalo = document.getElementById('val-calo');
+        const valRadius = document.getElementById('val-radius');
+
+        // 1. Initialize Scene
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50000);
@@ -245,18 +285,14 @@
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-            scene.add(ambientLight);
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(1, 1, 0.5);
-            scene.add(directionalLight);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(1, 1, 0.5);
+            scene.add(dirLight);
 
-            const axesHelper = new THREE.AxesHelper(5000);
-            scene.add(axesHelper);
-            const gridHelper = new THREE.GridHelper(10000, 20, 0x555555, 0x333333);
-            scene.add(gridHelper);
+            scene.add(new THREE.AxesHelper(5000));
+            scene.add(new THREE.GridHelper(10000, 20, 0x555555, 0x333333));
             
-            // Add the groups to the scene
             scene.add(tracksGroup);
             scene.add(caloGroup);
             scene.add(rawHitsGroup); 
@@ -265,32 +301,26 @@
             animate();
         }
 
-        // 2. Animation loop
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
             renderer.render(scene, camera);
         }
 
-        // 3. Handle window resize
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // 4. Load the NEW JSON data
         async function loadData() {
             try {
                 const response = await fetch('data/event_data_full.json'); 
-                if (!response.ok) {
-                    throw new Error(`Failed to load event_data_full.json. Make sure you ran the new Python script!`);
-                }
+                if (!response.ok) throw new Error(`Failed to load JSON.`);
                 eventData = await response.json();
-                console.log("Event data loaded:", eventData);
                 
-                populatePdgDropdown(); // Populate dropdown after data loads
-                drawEvent(currentEventId); // Draw the first event
+                populatePdgDropdown(); 
+                drawEvent(currentEventId); 
                 updateUI();
             } catch (error) {
                 console.error(error);
@@ -299,72 +329,55 @@
             }
         }
 
-        // NEW: Populate PDG ID dropdown with unique IDs from all events
         function populatePdgDropdown() {
             const allPdgIds = new Set();
-            for (const eventId in eventData) {
-                const event = eventData[eventId];
-                event.tracks.forEach(t => allPdgIds.add(t.pdg_id));
-                event.calo_hits.forEach(c => allPdgIds.add(c.pdg_id));
-                event.all_tracker_hits.forEach(h => allPdgIds.add(h.pdg_id));
+            for (const id in eventData) {
+                eventData[id].tracks.forEach(t => allPdgIds.add(t.pdg_id));
+                eventData[id].calo_hits.forEach(c => allPdgIds.add(c.pdg_id));
+                eventData[id].all_tracker_hits.forEach(h => allPdgIds.add(h.pdg_id));
             }
-
-            // Sort PDG IDs for cleaner display
-            const sortedPdgIds = Array.from(allPdgIds).sort((a, b) => a - b);
-
-            pdgIdSelect.innerHTML = '<option value="all">All Particles</option>'; // Reset
-            sortedPdgIds.forEach(id => {
-                const option = document.createElement('option');
-                option.value = id;
-                option.innerText = id;
-                pdgIdSelect.appendChild(option);
+            const sorted = Array.from(allPdgIds).sort((a, b) => a - b);
+            pdgIdSelect.innerHTML = '<option value="all">All Particles</option>'; 
+            sorted.forEach(id => {
+                const opt = document.createElement('option');
+                opt.value = id; opt.innerText = id;
+                pdgIdSelect.appendChild(opt);
             });
         }
 
-        // 5. Draw a specific event 
         function drawEvent(eventId) {
-            // A. Get current UI settings
             const ptCut = parseFloat(ptSlider.value);
-            const selectedPdgId = pdgIdSelect.value === 'all' ? null : parseInt(pdgIdSelect.value); // NEW: Get selected PDG ID
+            const selectedPdgId = pdgIdSelect.value === 'all' ? null : parseInt(pdgIdSelect.value); 
             const showTracks = showTracksCheck.checked;
             const showCalo = showCaloCheck.checked;
             const showRawHits = showRawHitsCheck.checked; 
 
-            // B. Clear previous event's objects
             clearGroup(tracksGroup);
             clearGroup(caloGroup);
             clearGroup(rawHitsGroup);
             
             const event = eventData[eventId];
             if (!event) {
-                console.warn(`No data for event ${eventId}`);
                 trackCountDisplay.innerText = "Tracks: 0";
                 caloCountDisplay.innerText = "Calo Hits: 0";
                 rawHitCountDisplay.innerText = "Raw Hits: 0"; 
                 return;
             }
 
-            // C. Filter data based on pT cut AND PDG ID
-            const filterFunction = (item) => {
-                return item.pT >= ptCut && 
-                       (selectedPdgId === null || item.pdg_id === selectedPdgId);
-            };
+            const filterFunction = (item) => item.pT >= ptCut && (selectedPdgId === null || item.pdg_id === selectedPdgId);
 
-            const filteredTracks = event.tracks.filter(filterFunction);
-            const filteredCalo = event.calo_hits.filter(filterFunction);
-            const filteredRawHits = event.all_tracker_hits.filter(filterFunction);
+            const fTracks = event.tracks.filter(filterFunction);
+            const fCalo = event.calo_hits.filter(filterFunction);
+            const fRawHits = event.all_tracker_hits.filter(filterFunction);
             
-            // D. Update counts in UI
-            trackCountDisplay.innerText = `Tracks: ${filteredTracks.length} / ${event.tracks.length}`;
-            caloCountDisplay.innerText = `Calo Hits: ${filteredCalo.length} / ${event.calo_hits.length}`;
-            rawHitCountDisplay.innerText = `Raw Hits: ${filteredRawHits.length} / ${event.all_tracker_hits.length}`; // NEW
+            trackCountDisplay.innerText = `Tracks: ${fTracks.length} / ${event.tracks.length}`;
+            caloCountDisplay.innerText = `Calo Hits: ${fCalo.length} / ${event.calo_hits.length}`;
+            rawHitCountDisplay.innerText = `Raw Hits: ${fRawHits.length} / ${event.all_tracker_hits.length}`; 
 
-            // E. Create a color map for this event to match tracks and calo
-            // Ensure unique particle_ids across all filtered types for consistent coloring
             const uniqueParticleIds = new Set();
-            filteredTracks.forEach(t => uniqueParticleIds.add(t.particle_id));
-            filteredCalo.forEach(c => uniqueParticleIds.add(c.particle_id));
-            filteredRawHits.forEach(h => uniqueParticleIds.add(h.particle_id)); // NEW
+            fTracks.forEach(t => uniqueParticleIds.add(t.particle_id));
+            fCalo.forEach(c => uniqueParticleIds.add(c.particle_id));
+            fRawHits.forEach(h => uniqueParticleIds.add(h.particle_id)); 
 
             const particleColorMap = new Map();
             let colorIndex = 0;
@@ -375,136 +388,115 @@
                 }
                 return particleColorMap.get(particleId);
             };
-            // Pre-populate color map for all relevant particles
             uniqueParticleIds.forEach(id => getColor(id));
 
-
-            // F. Draw Tracks (if toggled)
+            // F. Draw Tracks (TubeGeometry)
             if (showTracks) {
-                filteredTracks.forEach((track) => {
-                    const points = [];
-                    track.points.forEach(p => {
-                        points.push(new THREE.Vector3(p.x, p.y, p.z));
-                    });
-
-                    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                fTracks.forEach((track) => {
+                    const points = track.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+                    const curve = new THREE.CatmullRomCurve3(points);
+                    // Use the Dynamic Variable TRACK_THICKNESS
+                    const geometry = new THREE.TubeGeometry(curve, 64, TRACK_THICKNESS, 8, false);
                     const color = getColor(track.particle_id);
-                    const material = new THREE.LineBasicMaterial({ color: color });
-
-                    const line = new THREE.Line(geometry, material);
-                    tracksGroup.add(line);
+                    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: color }));
+                    tracksGroup.add(mesh);
                 });
             }
             
-            // G. Draw Calo Hits (if toggled)
+            // G. Draw Calo Hits 
             if (showCalo) {
-                filteredCalo.forEach((hit) => {
-                    const color = getColor(hit.particle_id);
-                    const material = new THREE.MeshBasicMaterial({ 
-                        color: color,
-                        opacity: 0.7,
-                        transparent: true
-                    });
-                    
-                    const mesh = new THREE.Mesh(caloGeometry, material);
-                    
+                fCalo.forEach((hit) => {
+                    const mat = new THREE.MeshBasicMaterial({ color: getColor(hit.particle_id), opacity: 0.7, transparent: true });
+                    const mesh = new THREE.Mesh(caloGeometry, mat);
                     mesh.position.set(hit.x, hit.y, hit.z);
+                    
+                    // Use Dynamic Variable CALO_ENERGY_SCALE
                     const scale = Math.max(0.1, Math.log10(1 + hit.energy * CALO_ENERGY_SCALE));
                     mesh.scale.set(scale, scale, scale);
-                    
                     caloGroup.add(mesh);
                 });
             }
 
-            // H. Draw Raw Tracker Hits (if toggled) 
-            if (showRawHits && filteredRawHits.length > 0) {
-                const positions = [];
-                const colorsArray = [];
-                const pointColor = new THREE.Color();
-
-                filteredRawHits.forEach(hit => {
-                    positions.push(hit.x, hit.y, hit.z);
-                    const colorVal = getColor(hit.particle_id);
-                    pointColor.setHex(colorVal);
-                    colorsArray.push(pointColor.r, pointColor.g, pointColor.b);
+            // H. Draw Raw Tracker Hits
+            if (showRawHits) {
+                fRawHits.forEach(hit => {
+                    const mesh = new THREE.Mesh(rawHitGeometry, new THREE.MeshBasicMaterial({ color: getColor(hit.particle_id) }));
+                    mesh.position.set(hit.x, hit.y, hit.z);
+                    // Use Dynamic Variable RAW_HIT_RADIUS to scale the base sphere (r=1)
+                    mesh.scale.set(RAW_HIT_RADIUS, RAW_HIT_RADIUS, RAW_HIT_RADIUS);
+                    rawHitsGroup.add(mesh);
                 });
-
-                rawHitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-                rawHitGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsArray, 3));
-                
-                const points = new THREE.Points(rawHitGeometry, rawHitMaterial);
-                rawHitsGroup.add(points);
             }
         }
         
-        // Helper to safely clear a group
         function clearGroup(group) {
             while(group.children.length > 0){ 
                 const obj = group.children[0];
                 group.remove(obj);
-                
-                // Important: Dispose of geometry and material to free memory
                 if (obj.geometry) obj.geometry.dispose();
-                // For Points, the material is usually shared, so don't dispose unless it's unique
-                // If it's a MeshBasicMaterial (like for calo), dispose of it
-                if (obj.isMesh && obj.material) obj.material.dispose();
-                // For LineBasicMaterial, dispose too
-                if (obj.isLine && obj.material) obj.material.dispose();
+                if (obj.material) obj.material.dispose();
             }
         }
         
-        // 6. Update UI elements (like buttons)
         function updateUI() {
             eventDisplay.innerText = `Event: ${currentEventId}`;
             prevBtn.disabled = (currentEventId === 0);
             nextBtn.disabled = (currentEventId === totalEvents - 1);
         }
         
-        // 7. Add event listeners
+        // --- EVENT LISTENERS ---
         
-        // Event navigation
-        prevBtn.addEventListener('click', () => {
-            if (currentEventId > 0) {
-                currentEventId--;
-                drawEvent(currentEventId);
-                updateUI();
-            }
-        });
-
-        nextBtn.addEventListener('click', () => {
-            if (currentEventId < totalEvents - 1) {
-                currentEventId++;
-                drawEvent(currentEventId);
-                updateUI();
-            }
-        });
+        prevBtn.addEventListener('click', () => { if(currentEventId>0) {currentEventId--; drawEvent(currentEventId); updateUI();} });
+        nextBtn.addEventListener('click', () => { if(currentEventId<totalEvents-1) {currentEventId++; drawEvent(currentEventId); updateUI();} });
         
-        // When toggles change, just redraw
         showTracksCheck.addEventListener('change', () => drawEvent(currentEventId));
         showCaloCheck.addEventListener('change', () => drawEvent(currentEventId));
         showRawHitsCheck.addEventListener('change', () => drawEvent(currentEventId)); 
 
-        // When slider moves, update text and redraw
         ptSlider.addEventListener('input', () => {
             ptValueDisplay.innerText = parseFloat(ptSlider.value).toFixed(1);
             drawEvent(currentEventId);
         });
 
-        // When PDG ID dropdown changes, redraw
         pdgIdSelect.addEventListener('change', () => drawEvent(currentEventId));
         
-        // Menu Toggle
+        // Main Menu Minimizer
         toggleMenuBtn.addEventListener('click', () => {
             uiContainer.classList.toggle('minimized');
-            const isMinimized = uiContainer.classList.contains('minimized');
-            if (isMinimized) {
-                toggleMenuBtn.innerText = '[+]';
-            } else {
-                toggleMenuBtn.innerText = '[–]';
-            }
+            toggleMenuBtn.innerText = uiContainer.classList.contains('minimized') ? '[+]' : '[–]';
         });
 
-        // --- Start Everything ---
+        // Config Menu Collapser
+        configHeader.addEventListener('click', () => {
+            configContent.classList.toggle('open'); // Toggle visibility
+            // Update Icon
+            configIcon.innerText = configContent.classList.contains('open') ? '[–]' : '[+]';
+        });
+
+        // --- CONFIGURATION INPUT LISTENERS ---
+
+        // 1. Thickness
+        cfgThickness.addEventListener('input', () => {
+            TRACK_THICKNESS = parseFloat(cfgThickness.value);
+            valThick.innerText = TRACK_THICKNESS;
+            drawEvent(currentEventId); // Redraw to see changes
+        });
+
+        // 2. Calo Scale
+        cfgCalo.addEventListener('input', () => {
+            CALO_ENERGY_SCALE = parseFloat(cfgCalo.value);
+            valCalo.innerText = CALO_ENERGY_SCALE;
+            drawEvent(currentEventId);
+        });
+
+        // 3. Radius
+        cfgRadius.addEventListener('input', () => {
+            RAW_HIT_RADIUS = parseFloat(cfgRadius.value);
+            valRadius.innerText = RAW_HIT_RADIUS;
+            drawEvent(currentEventId);
+        });
+
+        // --- Start ---
         init();
         loadData();
 
