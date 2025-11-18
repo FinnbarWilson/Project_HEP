@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Event Track Visualizer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", sans-serif;
+            margin: 0;
+            background-color: #111;
+            color: #eee;
+            overflow: hidden; /* Hide scrollbars */
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #ui-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 280px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        h2, h3 {
+            margin: 0 0 10px 0;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #444;
+        }
+        h3 {
+            font-size: 1.1em;
+            margin-top: 15px;
+        }
+        button {
+            font-size: 16px;
+            padding: 8px 15px;
+            margin: 0 5px;
+            border-radius: 8px;
+            border: 1px solid #666;
+            background-color: #333;
+            color: #eee;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #555;
+        }
+        button:disabled {
+            background-color: #222;
+            color: #555;
+            cursor: not-allowed;
+        }
+        /* Style for the new select dropdown */
+        select {
+            width: 100%;
+            padding: 6px;
+            margin-top: 5px;
+            background-color: #333;
+            color: #eee;
+            border: 1px solid #666;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        #event-display {
+            font-size: 24px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        #info-box {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            font-size: 14px;
+            color: #aaa;
+        }
+        .ui-section {
+            margin-top: 15px;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+        }
+        .ui-section h4 {
+            margin: 0 0 8px 0;
+            display: flex;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+        .ui-section h4:hover {
+            color: #fff;
+        }
+        label {
+            display: block;
+            margin: 5px 0;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin-top: 2px;
+            margin-bottom: 8px;
+        }
+        #toggle-menu-btn {
+            float: right;
+            font-size: 20px;
+            font-weight: bold;
+            font-family: monospace; 
+            background: transparent;
+            border: none;
+            color: #eee;
+            cursor: pointer;
+            padding: 0 8px;
+            margin-top: -4px;
+            border-radius: 5px;
+        }
+        #toggle-menu-btn:hover {
+            background: transparent;
+        }
+
+        #ui-container.minimized #ui-content {
+            display: none;
+        }
+
+        .config-content {
+            display: none; 
+            padding-left: 5px;
+        }
+        .config-content.open {
+            display: block;
+        }
+        .toggle-icon {
+            font-family: monospace;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-container">
+        <h2>Event Visualizer <button id="toggle-menu-btn">[–]</button></h2>
+
+        <div id="ui-content"> 
+            
+            <div class="ui-section" style="margin-top: 0; border-top: none;">
+                <label for="event-select">Jump to Event:</label>
+                <select id="event-select"></select>
+            </div>
+            
+            <div style="margin-top: 15px;">
+                <span id="event-display">Event: 0</span>
+                <button id="prev-btn">&lt; Prev</button>
+                <button id="next-btn">Next &gt;</button>
+            </div>
+            
+            <h3 id="track-count">Tracks: 0</h3>
+            
+            <div class="ui-section">
+                <h4>Filters</h4>
+                <label for="pt-slider">pT Cut: <span id="pt-value">0.5</span> GeV</label>
+                <input type="range" id="pt-slider" min="0" max="10" step="0.1" value="0.5">
+            </div>
+
+            <div class="ui-section">
+                <h4 id="config-header">Plot Configuration <span id="config-icon" class="toggle-icon">[+]</span></h4>
+                
+                <div id="config-content" class="config-content">
+                    <label>Track Thickness: <span id="val-thick">3</span></label>
+                    <input type="range" id="cfg-thickness" min="1" max="10" step="0.5" value="3">
+                </div>
+            </div>
+
+        </div> 
+    </div>
+
+    <div id="info-box">
+        Use Mouse: Rotate (Left Click + Drag) | Zoom (Scroll) | Pan (Right Click + Drag) || (X=Red, Y=Green, Z=Blue)
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let eventData = {};
+        let currentEventId = 0;
+        let totalEvents = 0; 
+        let sortedKeys = []; // Stores the ordered keys of the events
+
+        let tracksGroup = new THREE.Group();
+
+        const colors = [
+            0x4287f5, 0xf54242, 0x42f56a, 0xf5a442, 0xa442f5,
+            0xf542d4, 0x42f5f2, 0xf5e942, 0x9ef542, 0x42f599,
+            0x1a73e8, 0xd93025, 0x1e8e3e, 0xf29900, 0x8f00ff,
+            0x00bcd4, 0xffeb3b, 0x8bc34a, 0xff9800, 0x9c27b0
+        ];
+
+        // --- DYNAMIC CONFIGURATION VARIABLES ---
+        let TRACK_THICKNESS = 3;        
+
+        // --- DOM Elements ---
+        const eventSelect = document.getElementById('event-select'); // NEW DROPDOWN
+        const eventDisplay = document.getElementById('event-display');
+        const trackCountDisplay = document.getElementById('track-count');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        
+        const ptSlider = document.getElementById('pt-slider');
+        const ptValueDisplay = document.getElementById('pt-value');
+        const uiContainer = document.getElementById('ui-container');
+        const toggleMenuBtn = document.getElementById('toggle-menu-btn');
+
+        const configHeader = document.getElementById('config-header');
+        const configContent = document.getElementById('config-content');
+        const configIcon = document.getElementById('config-icon');
+        
+        const cfgThickness = document.getElementById('cfg-thickness');
+        const valThick = document.getElementById('val-thick');
+        
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50000);
+            camera.position.set(2000, 2000, 2000);
+            
+            const container = document.getElementById('canvas-container');
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setClearColor(0x111111);
+            container.appendChild(renderer.domElement);
+            
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(1, 1, 0.5);
+            scene.add(dirLight);
+
+            scene.add(new THREE.AxesHelper(5000));
+            scene.add(new THREE.GridHelper(10000, 20, 0x555555, 0x333333));
+            
+            scene.add(tracksGroup);
+            
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function populateEventDropdown(keys) {
+            // Clear existing options
+            eventSelect.innerHTML = ''; 
+            
+            // Populate with all available event keys
+            keys.forEach((key, index) => {
+                const option = document.createElement('option');
+                option.value = index; // Store the array index
+                option.text = `Event ${key}`; // Display the human-readable event key (0, 1, 2...)
+                eventSelect.appendChild(option);
+            });
+        }
+
+        async function loadData() {
+            const filename = 'Nov_2024_event_data_full.json';
+            
+            clearGroup(tracksGroup);
+            eventDisplay.innerText = "Loading...";
+            
+            try {
+                const response = await fetch(filename); 
+                if (!response.ok) throw new Error(`Failed to load ${filename}`);
+                
+                eventData = await response.json();
+                
+                // Get keys and sort them numerically for reliable indexing
+                sortedKeys = Object.keys(eventData).sort((a, b) => parseInt(a) - parseInt(b));
+                totalEvents = sortedKeys.length;
+                currentEventId = 0; 
+                
+                // Populate the new dropdown menu
+                populateEventDropdown(sortedKeys);
+
+                drawEvent(currentEventId); 
+                updateUI();
+                
+                console.log(`Loaded ${filename} with ${totalEvents} events.`);
+
+            } catch (error) {
+                console.error(error);
+                alert("Error loading data: " + error.message + "\nMake sure the JSON file is in the same directory as this HTML.");
+                eventDisplay.innerText = "Error";
+            }
+        }
+
+        function drawEvent(idx) {
+            // Get the actual JSON key (e.g., '0', '1', '10') based on the array index (idx)
+            const realKey = sortedKeys[idx];
+            
+            const ptCut = parseFloat(ptSlider.value);
+            clearGroup(tracksGroup);
+            
+            const event = eventData[realKey];
+            
+            if (!event) {
+                trackCountDisplay.innerText = "Tracks: 0";
+                return;
+            }
+
+            const filterFunction = (item) => item.pT >= ptCut;
+
+            const fTracks = event.tracks ? event.tracks.filter(filterFunction) : [];
+            
+            trackCountDisplay.innerText = `Tracks: ${fTracks.length} / ${event.tracks ? event.tracks.length : 0}`;
+            
+            const uniqueParticleIds = new Set();
+            fTracks.forEach(t => uniqueParticleIds.add(t.particle_id)); 
+
+            const particleColorMap = new Map();
+            let colorIndex = 0;
+            const getColor = (particleId) => {
+                if (!particleColorMap.has(particleId)) {
+                    particleColorMap.set(particleId, colors[colorIndex % colors.length]);
+                    colorIndex++;
+                }
+                return particleColorMap.get(particleId);
+            };
+            uniqueParticleIds.forEach(id => getColor(id));
+
+            fTracks.forEach((track) => {
+                if(track.points.length < 2) return; 
+                const points = track.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
+                const curve = new THREE.CatmullRomCurve3(points);
+                const geometry = new THREE.TubeGeometry(curve, 64, TRACK_THICKNESS, 8, false);
+                const color = getColor(track.particle_id);
+                const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: color }));
+                tracksGroup.add(mesh);
+            });
+            
+            // Ensure the dropdown is synched with the current index
+            eventSelect.value = idx;
+        }
+        
+        function clearGroup(group) {
+            while(group.children.length > 0){ 
+                const obj = group.children[0];
+                group.remove(obj);
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) obj.material.dispose();
+            }
+        }
+        
+        function updateUI() {
+            eventDisplay.innerText = `Event: ${sortedKeys[currentEventId]}`; // Use the actual key for display
+            prevBtn.disabled = (currentEventId === 0);
+            nextBtn.disabled = (currentEventId >= totalEvents - 1);
+        }
+        
+        // --- EVENT LISTENERS ---
+        
+        // NEW: Dropdown change handler
+        eventSelect.addEventListener('change', (e) => {
+            // The value is the array index (0 to 99)
+            currentEventId = parseInt(e.target.value);
+            drawEvent(currentEventId);
+            updateUI();
+        });
+
+        prevBtn.addEventListener('click', () => { if(currentEventId>0) {currentEventId--; drawEvent(currentEventId); updateUI();} });
+        nextBtn.addEventListener('click', () => { if(currentEventId<totalEvents-1) {currentEventId++; drawEvent(currentEventId); updateUI();} });
+        
+        ptSlider.addEventListener('input', () => {
+            ptValueDisplay.innerText = parseFloat(ptSlider.value).toFixed(1);
+            drawEvent(currentEventId);
+        });
+
+        toggleMenuBtn.addEventListener('click', () => {
+            uiContainer.classList.toggle('minimized');
+            toggleMenuBtn.innerText = uiContainer.classList.contains('minimized') ? '[+]' : '[–]';
+        });
+
+        configHeader.addEventListener('click', () => {
+            configContent.classList.toggle('open'); 
+            configIcon.innerText = configContent.classList.contains('open') ? '[–]' : '[+]';
+        });
+
+        cfgThickness.addEventListener('input', () => {
+            TRACK_THICKNESS = parseFloat(cfgThickness.value);
+            valThick.innerText = TRACK_THICKNESS;
+            drawEvent(currentEventId); 
+        });
+
+        // --- Start ---
+        init();
+        loadData();
+    </script>
+</body>
+</html>
