@@ -1,7 +1,13 @@
 import pandas as pd
+import os
+
+# Get the directory where this script is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 def get_calo_hits():
-    calo_hits = pd.read_parquet('data/parquet/reco/calo_hits/hard_scatter.ttbar.v1.reco.calo_hits.events0-9.parquet')
+    path = os.path.join(DATA_DIR, 'parquet/reco/calo_hits/hard_scatter.ttbar.v1.reco.calo_hits.events0-9.parquet')
+    calo_hits = pd.read_parquet(path)
     calo_hits = calo_hits.explode([col for col in calo_hits.columns if col != 'event_id'])
     # Create unique ID for each hit
     calo_hits = calo_hits.reset_index(drop=True) 
@@ -15,14 +21,16 @@ def get_calo_hits():
     return calo_hits
 
 def get_tracker_hits():
-    tracker_hits = pd.read_parquet('data/parquet/reco/tracker_hits/hard_scatter.ttbar.v1.reco.tracker_hits.events0-9.parquet')
+    path = os.path.join(DATA_DIR, 'parquet/reco/tracker_hits/hard_scatter.ttbar.v1.reco.tracker_hits.events0-9.parquet')
+    tracker_hits = pd.read_parquet(path)
     tracker_hits = tracker_hits.explode([col for col in tracker_hits.columns if col != 'event_id'])
     tracker_hits = tracker_hits.apply(pd.to_numeric, errors='coerce')
     tracker_hits = tracker_hits.reset_index(drop=True)
     return tracker_hits
 
 def get_tracks():
-    tracks = pd.read_parquet('data/parquet/reco/tracks/hard_scatter.ttbar.v1.reco.tracks.events0-9.parquet')
+    path = os.path.join(DATA_DIR, 'parquet/reco/tracks/hard_scatter.ttbar.v1.reco.tracks.events0-9.parquet')
+    tracks = pd.read_parquet(path)
     tracks = tracks.explode([col for col in tracks.columns if col != 'event_id'])
     tracks = tracks.explode('hit_ids')
     tracks = tracks.apply(pd.to_numeric, errors='coerce')
@@ -30,7 +38,8 @@ def get_tracks():
     return tracks
 
 def get_particles():
-    particles = pd.read_parquet('data/parquet/truth/particles/hard_scatter.ttbar.v1.truth.particles.events0-9.parquet')
+    path = os.path.join(DATA_DIR, 'parquet/truth/particles/hard_scatter.ttbar.v1.truth.particles.events0-9.parquet')
+    particles = pd.read_parquet(path)
     particles = particles.explode([col for col in particles.columns if col != 'event_id'])
     particles = particles.apply(pd.to_numeric, errors='coerce')
     particles = particles.reset_index(drop=True)
