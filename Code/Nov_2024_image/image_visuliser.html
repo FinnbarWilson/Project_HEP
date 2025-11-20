@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,8 +11,10 @@
             margin: 0;
             background-color: #111;
             color: #eee;
-            overflow: hidden; /* Hide scrollbars */
+            overflow: hidden;
+            /* Hide scrollbars */
         }
+
         #canvas-container {
             width: 100vw;
             height: 100vh;
@@ -19,6 +22,7 @@
             top: 0;
             left: 0;
         }
+
         #ui-container {
             position: absolute;
             top: 20px;
@@ -27,21 +31,27 @@
             background-color: rgba(0, 0, 0, 0.7);
             padding: 15px;
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.2);
             max-width: 280px;
             max-height: 90vh;
+            /* Prevent it from going off screen */
             overflow-y: auto;
+            /* Scroll if menu gets too tall */
         }
-        h2, h3 {
+
+        h2,
+        h3 {
             margin: 0 0 10px 0;
             padding-bottom: 5px;
             border-bottom: 1px solid #444;
         }
+
         h3 {
             font-size: 1.1em;
             margin-top: 15px;
         }
+
         button {
             font-size: 16px;
             padding: 8px 15px;
@@ -53,15 +63,68 @@
             cursor: pointer;
             transition: background-color 0.2s;
         }
+
         button:hover {
             background-color: #555;
         }
+
         button:disabled {
             background-color: #222;
             color: #555;
             cursor: not-allowed;
         }
-        /* Style for the new select dropdown */
+
+        #event-display {
+            font-size: 24px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        #info-box {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        .ui-section {
+            margin-top: 15px;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+        }
+
+        .ui-section h4 {
+            margin: 0 0 8px 0;
+            display: flex;
+            justify-content: space-between;
+            cursor: pointer;
+            /* Make headers clickable */
+        }
+
+        .ui-section h4:hover {
+            color: #fff;
+        }
+
+        label {
+            display: block;
+            margin: 5px 0;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        input[type="checkbox"] {
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            margin-top: 2px;
+            margin-bottom: 8px;
+        }
+
         select {
             width: 100%;
             padding: 6px;
@@ -72,49 +135,12 @@
             border-radius: 5px;
             font-size: 14px;
         }
-        #event-display {
-            font-size: 24px;
-            font-weight: bold;
-            margin-right: 10px;
-        }
-        #info-box {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            z-index: 100;
-            font-size: 14px;
-            color: #aaa;
-        }
-        .ui-section {
-            margin-top: 15px;
-            border-top: 1px solid #444;
-            padding-top: 10px;
-        }
-        .ui-section h4 {
-            margin: 0 0 8px 0;
-            display: flex;
-            justify-content: space-between;
-            cursor: pointer;
-        }
-        .ui-section h4:hover {
-            color: #fff;
-        }
-        label {
-            display: block;
-            margin: 5px 0;
-            font-size: 14px;
-            cursor: pointer;
-        }
-        input[type="range"] {
-            width: 100%;
-            margin-top: 2px;
-            margin-bottom: 8px;
-        }
+
         #toggle-menu-btn {
             float: right;
             font-size: 20px;
             font-weight: bold;
-            font-family: monospace; 
+            font-family: monospace;
             background: transparent;
             border: none;
             color: #eee;
@@ -123,6 +149,7 @@
             margin-top: -4px;
             border-radius: 5px;
         }
+
         #toggle-menu-btn:hover {
             background: transparent;
         }
@@ -132,18 +159,28 @@
         }
 
         .config-content {
-            display: none; 
+            display: none;
             padding-left: 5px;
         }
+
         .config-content.open {
             display: block;
         }
+
         .toggle-icon {
             font-family: monospace;
             font-weight: bold;
         }
+
+        .radio-group {
+            margin-left: 15px;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            color: #ccc;
+        }
     </style>
 </head>
+
 <body>
 
     <div id="canvas-container"></div>
@@ -151,37 +188,64 @@
     <div id="ui-container">
         <h2>Event Visualizer <button id="toggle-menu-btn">[–]</button></h2>
 
-        <div id="ui-content"> 
-            
+        <div id="ui-content">
+
             <div class="ui-section" style="margin-top: 0; border-top: none;">
                 <label for="event-select">Jump to Event:</label>
                 <select id="event-select"></select>
             </div>
-            
+
             <div style="margin-top: 15px;">
                 <span id="event-display">Event: 0</span>
                 <button id="prev-btn">&lt; Prev</button>
                 <button id="next-btn">Next &gt;</button>
             </div>
-            
+
             <h3 id="track-count">Tracks: 0</h3>
-            
+
             <div class="ui-section">
                 <h4>Filters</h4>
                 <label for="pt-slider">pT Cut: <span id="pt-value">0.5</span> GeV</label>
                 <input type="range" id="pt-slider" min="0" max="10" step="0.1" value="0.5">
+
+            </div>
+
+            <div class="ui-section">
+                <h4>Display Options</h4>
+
+                <!-- Track Options -->
+                <label><input type="checkbox" id="chk-show-tracks" checked> Show Tracks</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="track-mode" value="full" checked> Full Tracks</label>
+                    <label><input type="radio" name="track-mode" value="roi"> ROI Only (Vol 7-9)</label>
+                    <label><input type="radio" name="track-mode" value="extrapolated"> Extrapolated
+                        (Solid/Dashed)</label>
+                </div>
+
+                <!-- Hit Options -->
+                <label><input type="checkbox" id="chk-show-hits"> Show Hits</label>
+                <div class="radio-group">
+                    <label><input type="radio" name="hits-mode" value="roi" checked> Vol 7-9 Only</label>
+                    <label><input type="radio" name="hits-mode" value="all"> All Volumes</label>
+                </div>
             </div>
 
             <div class="ui-section">
                 <h4 id="config-header">Plot Configuration <span id="config-icon" class="toggle-icon">[+]</span></h4>
-                
+
                 <div id="config-content" class="config-content">
                     <label>Track Thickness: <span id="val-thick">3</span></label>
                     <input type="range" id="cfg-thickness" min="1" max="10" step="0.5" value="3">
+
+                    <label>Hit Radius: <span id="val-radius">3</span></label>
+                    <input type="range" id="cfg-radius" min="1" max="10" step="0.5" value="3">
+
+                    <label>Decimation (1 in N): <span id="val-decimation">10</span></label>
+                    <input type="range" id="cfg-decimation" min="1" max="20" step="1" value="10">
                 </div>
             </div>
 
-        </div> 
+        </div>
     </div>
 
     <div id="info-box">
@@ -195,10 +259,11 @@
         let scene, camera, renderer, controls;
         let eventData = {};
         let currentEventId = 0;
-        let totalEvents = 0; 
-        let sortedKeys = []; // Stores the ordered keys of the events
+        let totalEvents = 0;
+        let sortedKeys = [];
 
         let tracksGroup = new THREE.Group();
+        let hitsGroup = new THREE.Group();
 
         const colors = [
             0x4287f5, 0xf54242, 0x42f56a, 0xf5a442, 0xa442f5,
@@ -208,15 +273,17 @@
         ];
 
         // --- DYNAMIC CONFIGURATION VARIABLES ---
-        let TRACK_THICKNESS = 3;        
+        let TRACK_THICKNESS = 3;
+        let HIT_RADIUS = 3;
+        let TRACK_DECIMATION = 10; // Show 1 in N tracks
 
         // --- DOM Elements ---
-        const eventSelect = document.getElementById('event-select'); // NEW DROPDOWN
+        const eventSelect = document.getElementById('event-select');
         const eventDisplay = document.getElementById('event-display');
         const trackCountDisplay = document.getElementById('track-count');
         const prevBtn = document.getElementById('prev-btn');
         const nextBtn = document.getElementById('next-btn');
-        
+
         const ptSlider = document.getElementById('pt-slider');
         const ptValueDisplay = document.getElementById('pt-value');
         const uiContainer = document.getElementById('ui-container');
@@ -225,22 +292,33 @@
         const configHeader = document.getElementById('config-header');
         const configContent = document.getElementById('config-content');
         const configIcon = document.getElementById('config-icon');
-        
+
         const cfgThickness = document.getElementById('cfg-thickness');
         const valThick = document.getElementById('val-thick');
-        
+
+        const cfgRadius = document.getElementById('cfg-radius');
+        const valRadius = document.getElementById('val-radius');
+
+        const cfgDecimation = document.getElementById('cfg-decimation');
+        const valDecimation = document.getElementById('val-decimation');
+
+        const chkShowTracks = document.getElementById('chk-show-tracks');
+        const chkShowHits = document.getElementById('chk-show-hits');
+
+        // Radio buttons don't need individual IDs, we query them by name
+
         function init() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50000);
-            camera.position.set(2000, 2000, 2000);
-            
+            camera.position.set(1000, 1000, 1000);
+
             const container = document.getElementById('canvas-container');
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setClearColor(0x111111);
             container.appendChild(renderer.domElement);
-            
+
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
 
@@ -249,11 +327,13 @@
             dirLight.position.set(1, 1, 0.5);
             scene.add(dirLight);
 
-            scene.add(new THREE.AxesHelper(5000));
-            scene.add(new THREE.GridHelper(10000, 20, 0x555555, 0x333333));
-            
+            scene.add(new THREE.AxesHelper(500));
+            // Increased grid size from 5000 to 10000
+            scene.add(new THREE.GridHelper(10000, 100, 0x555555, 0x333333));
+
             scene.add(tracksGroup);
-            
+            scene.add(hitsGroup);
+
             window.addEventListener('resize', onWindowResize, false);
             animate();
         }
@@ -271,41 +351,41 @@
         }
 
         function populateEventDropdown(keys) {
-            // Clear existing options
-            eventSelect.innerHTML = ''; 
-            
-            // Populate with all available event keys
+            eventSelect.innerHTML = '';
             keys.forEach((key, index) => {
                 const option = document.createElement('option');
-                option.value = index; // Store the array index
-                option.text = `Event ${key}`; // Display the human-readable event key (0, 1, 2...)
+                option.value = index;
+                option.text = `Event ${key}`;
                 eventSelect.appendChild(option);
             });
         }
 
         async function loadData() {
             const filename = 'Nov_2024_event_data_full.json';
-            
-            clearGroup(tracksGroup);
-            eventDisplay.innerText = "Loading...";
-            
-            try {
-                const response = await fetch(filename); 
-                if (!response.ok) throw new Error(`Failed to load ${filename}`);
-                
-                eventData = await response.json();
-                
-                // Get keys and sort them numerically for reliable indexing
-                sortedKeys = Object.keys(eventData).sort((a, b) => parseInt(a) - parseInt(b));
-                totalEvents = sortedKeys.length;
-                currentEventId = 0; 
-                
-                // Populate the new dropdown menu
-                populateEventDropdown(sortedKeys);
 
-                drawEvent(currentEventId); 
+            clearGroup(tracksGroup);
+            clearGroup(hitsGroup);
+            eventDisplay.innerText = "Loading...";
+
+            try {
+                const response = await fetch(filename);
+                if (!response.ok) throw new Error(`Failed to load ${filename}`);
+
+                eventData = await response.json();
+
+                sortedKeys = Object.keys(eventData).sort((a, b) => {
+                    const numA = parseInt(a.replace(/\D/g, ''));
+                    const numB = parseInt(b.replace(/\D/g, ''));
+                    return numA - numB;
+                });
+
+                totalEvents = sortedKeys.length;
+                currentEventId = 0;
+
+                populateEventDropdown(sortedKeys);
+                drawEvent(currentEventId);
                 updateUI();
-                
+
                 console.log(`Loaded ${filename} with ${totalEvents} events.`);
 
             } catch (error) {
@@ -316,14 +396,13 @@
         }
 
         function drawEvent(idx) {
-            // Get the actual JSON key (e.g., '0', '1', '10') based on the array index (idx)
             const realKey = sortedKeys[idx];
-            
             const ptCut = parseFloat(ptSlider.value);
             clearGroup(tracksGroup);
-            
+            clearGroup(hitsGroup);
+
             const event = eventData[realKey];
-            
+
             if (!event) {
                 trackCountDisplay.innerText = "Tracks: 0";
                 return;
@@ -332,12 +411,13 @@
             const filterFunction = (item) => item.pT >= ptCut;
 
             const fTracks = event.tracks ? event.tracks.filter(filterFunction) : [];
-            
-            trackCountDisplay.innerText = `Tracks: ${fTracks.length} / ${event.tracks ? event.tracks.length : 0}`;
-            
-            const uniqueParticleIds = new Set();
-            fTracks.forEach(t => uniqueParticleIds.add(t.particle_id)); 
 
+            // Apply Decimation
+            const decimatedTracks = fTracks.filter((_, i) => i % TRACK_DECIMATION === 0);
+
+            trackCountDisplay.innerText = `Tracks: ${decimatedTracks.length} (shown) / ${fTracks.length} (total)`;
+
+            // Color mapping
             const particleColorMap = new Map();
             let colorIndex = 0;
             const getColor = (particleId) => {
@@ -347,74 +427,169 @@
                 }
                 return particleColorMap.get(particleId);
             };
-            uniqueParticleIds.forEach(id => getColor(id));
 
-            fTracks.forEach((track) => {
-                if(track.points.length < 2) return; 
-                const points = track.points.map(p => new THREE.Vector3(p.x, p.y, p.z));
-                const curve = new THREE.CatmullRomCurve3(points);
-                const geometry = new THREE.TubeGeometry(curve, 64, TRACK_THICKNESS, 8, false);
+            const showTracks = chkShowTracks.checked;
+            const showHits = chkShowHits.checked;
+            const hitsMode = document.querySelector('input[name="hits-mode"]:checked').value;
+            const trackMode = document.querySelector('input[name="track-mode"]:checked').value;
+
+            decimatedTracks.forEach((track) => {
                 const color = getColor(track.particle_id);
-                const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: color }));
-                tracksGroup.add(mesh);
+                const points = track.points;
+
+                // --- DRAW TRACKS ---
+                if (showTracks && points.length > 1) {
+
+                    // Filter points based on Track Mode
+                    let pointsToDraw = points;
+
+                    if (trackMode === 'roi') {
+                        pointsToDraw = points.filter(p => p.in_roi);
+                    }
+
+                    if (pointsToDraw.length > 1) {
+                        // If mode is 'extrapolated', we need special handling per segment
+                        if (trackMode === 'extrapolated') {
+                            for (let i = 0; i < points.length - 1; i++) {
+                                const p1 = points[i];
+                                const p2 = points[i + 1];
+
+                                // Logic: Segment is Solid ONLY if BOTH points are in ROI.
+                                // This ensures solid lines always end at an ROI hit (which has a sphere).
+                                const isSolid = p1.in_roi && p2.in_roi;
+
+                                const v1 = new THREE.Vector3(p1.x, p1.y, p1.z);
+                                const v2 = new THREE.Vector3(p2.x, p2.y, p2.z);
+
+                                if (isSolid) {
+                                    const curve = new THREE.LineCurve3(v1, v2);
+                                    const geometry = new THREE.TubeGeometry(curve, 1, TRACK_THICKNESS, 4, false);
+                                    const material = new THREE.MeshBasicMaterial({ color: color });
+                                    const mesh = new THREE.Mesh(geometry, material);
+                                    tracksGroup.add(mesh);
+                                } else {
+                                    const geometry = new THREE.BufferGeometry().setFromPoints([v1, v2]);
+                                    const material = new THREE.LineDashedMaterial({
+                                        color: color,
+                                        dashSize: 20,
+                                        gapSize: 10,
+                                        linewidth: 1
+                                    });
+                                    const line = new THREE.Line(geometry, material);
+                                    line.computeLineDistances();
+                                    tracksGroup.add(line);
+                                }
+                            }
+                        } else {
+                            // Standard drawing (Full or ROI Only)
+                            const vectorPoints = pointsToDraw.map(p => new THREE.Vector3(p.x, p.y, p.z));
+
+                            // Use CatmullRom for smooth curve if enough points, else LineCurve
+                            if (vectorPoints.length > 1) {
+                                const curve = new THREE.CatmullRomCurve3(vectorPoints);
+                                const geometry = new THREE.TubeGeometry(curve, 64, TRACK_THICKNESS, 8, false);
+                                const material = new THREE.MeshBasicMaterial({ color: color });
+                                const mesh = new THREE.Mesh(geometry, material);
+                                tracksGroup.add(mesh);
+                            }
+                        }
+                    }
+                }
+
+                // --- DRAW HITS ---
+                if (showHits) {
+                    points.forEach(p => {
+                        if (hitsMode === 'roi' && !p.in_roi) return;
+
+                        const geometry = new THREE.SphereGeometry(HIT_RADIUS, 8, 8);
+                        const material = new THREE.MeshBasicMaterial({ color: color });
+                        const sphere = new THREE.Mesh(geometry, material);
+                        sphere.position.set(p.x, p.y, p.z);
+                        hitsGroup.add(sphere);
+                    });
+                }
             });
-            
-            // Ensure the dropdown is synched with the current index
+
             eventSelect.value = idx;
         }
-        
+
         function clearGroup(group) {
-            while(group.children.length > 0){ 
+            while (group.children.length > 0) {
                 const obj = group.children[0];
                 group.remove(obj);
                 if (obj.geometry) obj.geometry.dispose();
                 if (obj.material) obj.material.dispose();
             }
         }
-        
+
         function updateUI() {
-            eventDisplay.innerText = `Event: ${sortedKeys[currentEventId]}`; // Use the actual key for display
+            eventDisplay.innerText = `Event: ${sortedKeys[currentEventId]}`;
             prevBtn.disabled = (currentEventId === 0);
             nextBtn.disabled = (currentEventId >= totalEvents - 1);
         }
-        
+
         // --- EVENT LISTENERS ---
-        
-        // NEW: Dropdown change handler
         eventSelect.addEventListener('change', (e) => {
-            // The value is the array index (0 to 99)
             currentEventId = parseInt(e.target.value);
             drawEvent(currentEventId);
             updateUI();
         });
 
-        prevBtn.addEventListener('click', () => { if(currentEventId>0) {currentEventId--; drawEvent(currentEventId); updateUI();} });
-        nextBtn.addEventListener('click', () => { if(currentEventId<totalEvents-1) {currentEventId++; drawEvent(currentEventId); updateUI();} });
-        
+        prevBtn.addEventListener('click', () => { if (currentEventId > 0) { currentEventId--; drawEvent(currentEventId); updateUI(); } });
+        nextBtn.addEventListener('click', () => { if (currentEventId < totalEvents - 1) { currentEventId++; drawEvent(currentEventId); updateUI(); } });
+
+        chkShowTracks.addEventListener('change', () => drawEvent(currentEventId));
+        chkShowHits.addEventListener('change', () => drawEvent(currentEventId));
+
+        // Add listeners for all radio buttons
+        document.querySelectorAll('input[name="track-mode"]').forEach(radio => {
+            radio.addEventListener('change', () => drawEvent(currentEventId));
+        });
+        document.querySelectorAll('input[name="hits-mode"]').forEach(radio => {
+            radio.addEventListener('change', () => drawEvent(currentEventId));
+        });
+
         ptSlider.addEventListener('input', () => {
             ptValueDisplay.innerText = parseFloat(ptSlider.value).toFixed(1);
             drawEvent(currentEventId);
         });
-
+        // Main Menu Minimizer
         toggleMenuBtn.addEventListener('click', () => {
             uiContainer.classList.toggle('minimized');
             toggleMenuBtn.innerText = uiContainer.classList.contains('minimized') ? '[+]' : '[–]';
         });
 
+        // Config Menu Collapser
         configHeader.addEventListener('click', () => {
-            configContent.classList.toggle('open'); 
+            configContent.classList.toggle('open'); // Toggle visibility
+            // Update Icon
             configIcon.innerText = configContent.classList.contains('open') ? '[–]' : '[+]';
         });
 
+        // --- CONFIGURATION INPUT LISTENERS ---
         cfgThickness.addEventListener('input', () => {
             TRACK_THICKNESS = parseFloat(cfgThickness.value);
             valThick.innerText = TRACK_THICKNESS;
-            drawEvent(currentEventId); 
+            drawEvent(currentEventId); // Redraw to see changes
+        });
+
+        cfgRadius.addEventListener('input', () => {
+            HIT_RADIUS = parseFloat(cfgRadius.value);
+            valRadius.innerText = HIT_RADIUS;
+            drawEvent(currentEventId);
+        });
+
+        cfgDecimation.addEventListener('input', () => {
+            TRACK_DECIMATION = parseInt(cfgDecimation.value);
+            valDecimation.innerText = TRACK_DECIMATION;
+            drawEvent(currentEventId);
         });
 
         // --- Start ---
         init();
         loadData();
+
     </script>
 </body>
+
 </html>

@@ -24,8 +24,12 @@ def get_tracker_hits():
     path = os.path.join(DATA_DIR, 'parquet/reco/tracker_hits/hard_scatter.ttbar.v1.reco.tracker_hits.events0-9.parquet')
     tracker_hits = pd.read_parquet(path)
     tracker_hits = tracker_hits.explode([col for col in tracker_hits.columns if col != 'event_id'])
-    tracker_hits = tracker_hits.apply(pd.to_numeric, errors='coerce')
+    # Create unique ID for each hit
     tracker_hits = tracker_hits.reset_index(drop=True)
+    tracker_hits = tracker_hits.reset_index().rename(columns={'index': 'HIT_ID'})
+    tracker_hits = tracker_hits.apply(pd.to_numeric, errors='coerce')
+    # Set HIT_ID as index
+    tracker_hits = tracker_hits.set_index('HIT_ID')
     return tracker_hits
 
 def get_tracks():
