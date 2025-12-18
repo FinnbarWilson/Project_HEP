@@ -217,6 +217,7 @@
                 <label><input type="checkbox" id="chk-show-tracks" checked> Show Tracks</label>
                 <div class="radio-group">
                     <label><input type="radio" name="track-mode" value="full" checked> Full Tracks</label>
+                    <label><input type="radio" name="track-mode" value="full-line"> Full Tracks (Line)</label>
                     <label><input type="radio" name="track-mode" value="roi"> ROI Only (Vol 7-9)</label>
                     <label><input type="radio" name="track-mode" value="extrapolated"> Extrapolated
                         (Solid/Dashed)</label>
@@ -228,6 +229,14 @@
                     <label><input type="radio" name="hits-mode" value="roi" checked> Vol 7-9 Only</label>
                     <label><input type="radio" name="hits-mode" value="all"> All Volumes</label>
                 </div>
+            </div>
+
+            <div class="ui-section">
+                <h4>Vertex Options</h4>
+                <label><input type="checkbox" id="chk-show-vertices"> Show Vertices</label>
+
+                <label style="margin-top: 10px;">Vertex Radius: <span id="val-vtx-radius">1.0</span></label>
+                <input type="range" id="cfg-vtx-radius" min="0.1" max="5.0" step="0.1" value="1.0">
             </div>
 
             <div class="ui-section">
@@ -275,6 +284,7 @@
         // --- DYNAMIC CONFIGURATION VARIABLES ---
         let TRACK_THICKNESS = 3;
         let HIT_RADIUS = 3;
+        let VERTEX_RADIUS = 1.0;
         let TRACK_DECIMATION = 10; // Show 1 in N tracks
 
         // --- DOM Elements ---
@@ -299,11 +309,15 @@
         const cfgRadius = document.getElementById('cfg-radius');
         const valRadius = document.getElementById('val-radius');
 
+        const cfgVtxRadius = document.getElementById('cfg-vtx-radius');
+        const valVtxRadius = document.getElementById('val-vtx-radius');
+
         const cfgDecimation = document.getElementById('cfg-decimation');
         const valDecimation = document.getElementById('val-decimation');
 
         const chkShowTracks = document.getElementById('chk-show-tracks');
         const chkShowHits = document.getElementById('chk-show-hits');
+        const chkShowVertices = document.getElementById('chk-show-vertices');
 
         // Radio buttons don't need individual IDs, we query them by name
 
@@ -430,8 +444,12 @@
 
             const showTracks = chkShowTracks.checked;
             const showHits = chkShowHits.checked;
+            const showVertices = chkShowVertices.checked;
             const hitsMode = document.querySelector('input[name="hits-mode"]:checked').value;
             const trackMode = document.querySelector('input[name="track-mode"]:checked').value;
+
+            // Set to track unique vertices to avoid over-plotting (very important for performance)
+            const uniqueVertices = new Set();
 
             decimatedTracks.forEach((track) => {
                 const color = getColor(track.particle_id);
@@ -444,6 +462,8 @@
                     let pointsToDraw = points;
 
                     if (trackMode === 'roi') {
+                        // Keep vertex (index 0) if it's marked in_roi? 
+                        // Our python script sets vertex.in_roi=1, so it survives this filter.
                         pointsToDraw = points.filter(p => p.in_roi);
                     }
 
@@ -455,7 +475,7 @@
                                 const p2 = points[i + 1];
 
                                 // Logic: Segment is Solid ONLY if BOTH points are in ROI.
-                                // This ensures solid lines always end at an ROI hit (which has a sphere).
+                                // We fake vertex.in_roi=1 so Vertex->FirstHit is Solid (if FirstHit is ROI).
                                 const isSolid = p1.in_roi && p2.in_roi;
 
                                 const v1 = new THREE.Vector3(p1.x, p1.y, p1.z);
@@ -486,11 +506,25 @@
 
                             // Use CatmullRom for smooth curve if enough points, else LineCurve
                             if (vectorPoints.length > 1) {
-                                const curve = new THREE.CatmullRomCurve3(vectorPoints);
-                                const geometry = new THREE.TubeGeometry(curve, 64, TRACK_THICKNESS, 8, false);
-                                const material = new THREE.MeshBasicMaterial({ color: color });
-                                const mesh = new THREE.Mesh(geometry, material);
-                                tracksGroup.add(mesh);
+                                if (trackMode === 'full-line') {
+                                    // Draw thin lines only
+                                    const geometry = new THREE.BufferGeometry().setFromPoints(vectorPoints);
+                                    const material = new THREE.LineBasicMaterial({
+                                        color: color,
+                                        linewidth: 1, // Note: WebGL often ignores linewidth > 1
+                                        opacity: 0.8,
+                                        transparent: true
+                                    });
+                                    const line = new THREE.Line(geometry, material);
+                                    tracksGroup.add(line);
+                                } else {
+                                    // Solid Tubes (Full or ROI)
+                                    const curve = new THREE.CatmullRomCurve3(vectorPoints);
+                                    const geometry = new THREE.TubeGeometry(curve, 64, TRACK_THICKNESS, 8, false);
+                                    const material = new THREE.MeshBasicMaterial({ color: color });
+                                    const mesh = new THREE.Mesh(geometry, material);
+                                    tracksGroup.add(mesh);
+                                }
                             }
                         }
                     }
@@ -498,7 +532,11 @@
 
                 // --- DRAW HITS ---
                 if (showHits) {
-                    points.forEach(p => {
+                    points.forEach((p, idx) => {
+                        // Skip the first point if it is the vertex (we draw vertices separately)
+                        // In Python script, the first point is ALWAYS the vertex.
+                        if (idx === 0) return;
+
                         if (hitsMode === 'roi' && !p.in_roi) return;
 
                         const geometry = new THREE.SphereGeometry(HIT_RADIUS, 8, 8);
@@ -508,7 +546,30 @@
                         hitsGroup.add(sphere);
                     });
                 }
+
+                // --- COLLECT RAW VERTICES FROM VISIBLE TRACKS ---
+                if (showVertices) {
+                    // Filter: Only Beamline Vertices (R < 1.0)
+                    // We use the raw vertex from the track data
+                    const r2 = track.vx * track.vx + track.vy * track.vy;
+                    if (r2 < 1.0) { // 1.0^2 = 1.0
+                        const key = `${track.vx},${track.vy},${track.vz}`;
+                        uniqueVertices.add(key);
+                    }
+                }
             });
+
+            // --- DRAW COLLECTED VERTICES ---
+            if (showVertices) {
+                uniqueVertices.forEach(key => {
+                    const [x, y, z] = key.split(',').map(Number);
+                    const geometry = new THREE.SphereGeometry(VERTEX_RADIUS, 16, 16);
+                    const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                    const sphere = new THREE.Mesh(geometry, material);
+                    sphere.position.set(x, y, z);
+                    hitsGroup.add(sphere);
+                });
+            }
 
             eventSelect.value = idx;
         }
@@ -540,6 +601,7 @@
 
         chkShowTracks.addEventListener('change', () => drawEvent(currentEventId));
         chkShowHits.addEventListener('change', () => drawEvent(currentEventId));
+        chkShowVertices.addEventListener('change', () => drawEvent(currentEventId));
 
         // Add listeners for all radio buttons
         document.querySelectorAll('input[name="track-mode"]').forEach(radio => {
@@ -576,6 +638,12 @@
         cfgRadius.addEventListener('input', () => {
             HIT_RADIUS = parseFloat(cfgRadius.value);
             valRadius.innerText = HIT_RADIUS;
+            drawEvent(currentEventId);
+        });
+
+        cfgVtxRadius.addEventListener('input', () => {
+            VERTEX_RADIUS = parseFloat(cfgVtxRadius.value);
+            valVtxRadius.innerText = VERTEX_RADIUS;
             drawEvent(currentEventId);
         });
 

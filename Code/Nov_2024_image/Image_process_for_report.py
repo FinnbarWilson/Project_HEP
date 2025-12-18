@@ -1,13 +1,13 @@
 import pandas as pd
 import numpy as np
+import glob
 import json
 import os
-import glob
 
 # --- CONFIGURATION ---
 # Path to the directory containing the CSV files
-DATA_DIR = '/Users/finn/Documents/Large_Datasets/TrackML/train_100_events'
-OUTPUT_FILE = 'Nov_2024_image/Nov_2024_event_data_full.json'
+DATA_DIR = '/Users/finn/Documents/Code/Large_Datasets/TrackML/train_100_events'
+OUTPUT_FILE = 'Nov_2024_event_data_full.json'
 
 # Filter Configuration
 VOLUMES_OF_INTEREST = [7, 8, 9]
@@ -69,7 +69,18 @@ def process_trackml_data():
                 group['R'] = np.sqrt(group['x']**2 + group['y']**2)
                 sorted_group = group.sort_values('R')
                 
-                track_points = []
+                # Extract particle properties early to get Vertex
+                particle_props = group.iloc[0]
+                
+                # Create Vertex Point (Treat as inside ROI to ensure solid connection to first hit)
+                vertex_point = {
+                    "x": round(float(particle_props['vx']), 2),
+                    "y": round(float(particle_props['vy']), 2),
+                    "z": round(float(particle_props['vz']), 2),
+                    "in_roi": 1
+                }
+                
+                track_points = [vertex_point]
                 
                 for _, row in sorted_group.iterrows():
                     vol_id = int(row['volume_id'])
@@ -80,12 +91,10 @@ def process_trackml_data():
                         "y": round(float(row['y']), 2),
                         "z": round(float(row['z']), 2),
                         # "vol_id": vol_id, # Removed to save space
-                        "in_roi": 1 if in_roi else 0 # Use 1/0 instead of true/false for slight saving
+                        "in_roi": 1 if in_roi else 0 
                     })
                 
-                # Extract particle properties from the first row (same for all hits of this particle)
-                particle_props = group.iloc[0]
-
+                
                 # Remap particle_id
                 if pid not in particle_id_map:
                     particle_id_map[pid] = next_pid
@@ -95,6 +104,9 @@ def process_trackml_data():
                     "particle_id": particle_id_map[pid],
                     "pT": round(float(particle_props['pT']), 2),
                     "pdg_id": int(particle_props['pdg_id'] if 'pdg_id' in particle_props else 0),
+                    "vx": round(float(particle_props['vx']), 2),
+                    "vy": round(float(particle_props['vy']), 2),
+                    "vz": round(float(particle_props['vz']), 2),
                     "points": track_points
                 })
             
@@ -108,7 +120,9 @@ def process_trackml_data():
             continue
 
     # Ensure output directory exists
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+    output_dir = os.path.dirname(OUTPUT_FILE)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     
     with open(OUTPUT_FILE, 'w') as outfile:
         # Use separators to remove whitespace for minification
